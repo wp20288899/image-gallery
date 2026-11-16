@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+<title>图片画廊</title>
+<style>
+  :root {
+    --gap: 14px;
+    --bg: #0f1115;
+    --fg: #e8eaed;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  header {
+    padding: 28px 20px 10px;
+    text-align: center;
+  }
+  header h1 { margin: 0; font-size: clamp(20px, 4vw, 30px); font-weight: 600; letter-spacing: 1px; }
+  header p { margin: 6px 0 0; font-size: 13px; opacity: 0.55; }
+
+  /* 流式瀑布流布局：CSS columns，自动按列宽换行 */
+  .masonry {
+    padding: 18px;
+    column-gap: var(--gap);
+    column-count: 4;
+  }
+  @media (max-width: 1200px) { .masonry { column-count: 3; } }
+  @media (max-width: 760px)  { .masonry { column-count: 2; padding: 12px; --gap: 10px; } }
+  @media (max-width: 420px)  { .masonry { column-count: 2; } }
+
+  .item {
+    break-inside: avoid;
+    margin-bottom: var(--gap);
+    border-radius: 10px;
+    overflow: hidden;
+    background: #1b1e24;
+    cursor: zoom-in;
+    position: relative;
+    display: block;
+    transform: translateZ(0);
+    transition: transform .25s ease, box-shadow .25s ease;
+  }
+  .item img {
+    width: 100%;
+    height: auto;
+    display: block;
+    opacity: 0;
+    transition: opacity .4s ease;
+  }
+  .item img.loaded { opacity: 1; }
+  @media (hover: hover) {
+    .item:hover { transform: translateY(-3px); box-shadow: 0 10px 28px rgba(0,0,0,.5); }
+  }
+
+  /* 灯箱 Lightbox */
+  .lb {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.94);
+    z-index: 1000;
+    display: none;
+    touch-action: none;
+    overflow: hidden;
+  }
+  .lb.open { display: block; }
+  .lb-track {
+    position: absolute;
+    top: 0; left: 0;
+    height: 100%;
+    display: flex;
+    will-change: transform;
+  }
+  .lb-slide {
+    width: 100vw;
+    height: 100%;
+    flex: 0 0 100vw;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .lb-slide img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    user-select: none;
+    -webkit-user-drag: none;
+    will-change: transform;
+    touch-action: none;
+  }
+  .lb-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 48px; height: 48px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255,255,255,.12);
+    color: #fff;
+    font-size: 24px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 2;
+    transition: background .2s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .lb-btn:hover { background: rgba(255,255,255,.25); }
+  .lb-prev { left: 16px; }
+  .lb-next { right: 16px; }
+  .lb-close {
+    position: absolute;
+    top: 16px; right: 16px;
+    width: 44px; height: 44px;
+    border: none; border-radius: 50%;
+    background: rgba(255,255,255,.12);
+    color: #fff; font-size: 22px;
+    cursor: pointer; z-index: 2;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .lb-close:hover { background: rgba(255,255,255,.25); }
+  .lb-count {
+    position: absolute;
+    bottom: 18px; left: 50%;
+    transform: translateX(-50%);
+    color: #fff; font-size: 14px;
+    background: rgba(0,0,0,.4);
+    padding: 5px 14px; border-radius: 20px;
+    z-index: 2; letter-spacing: 1px;
+  }
+  .lb-hint {
+    position: absolute;
+    top: 18px; left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,.5);
+    font-size: 12px; z-index: 2;
+  }
+  /* 移动端隐藏箭头按钮，用滑动 */
+  @media (max-width: 760px), (hover: none) {
+    .lb-prev, .lb-next { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>图片画廊</h1>
+  <p>点击图片放大 · 左右滑动切换 · 双指/滚轮缩放</p>
+</header>
+
+<main class="masonry" id="masonry"></main>
+
+<div class="lb" id="lb">
+  <button class="lb-close" id="lbClose" aria-label="关闭">✕</button>
+  <button class="lb-btn lb-prev" id="lbPrev" aria-label="上一张">‹</button>
+  <button class="lb-btn lb-next" id="lbNext" aria-label="下一张">›</button>
+  <div class="lb-track" id="lbTrack"></div>
+  <div class="lb-count" id="lbCount"></div>
+  <div class="lb-hint">双指缩放 · 双击放大 · 滑动切换</div>
+</div>
+
+<script>
+  const IMAGES = [
+      "images/2026-11-15 18.56.14.jpg",
+      "images/2026-11-15 18.56.27.jpg",
+      "images/2026-11-15 18.56.38.jpg",
+      "images/2026-11-15 18.56.57.jpg",
+      "images/2026-11-15 18.57.08.jpg",
+      "images/2026-11-15 18.57.13.jpg",
+      "images/2026-11-15 18.57.16.jpg",
+      "images/2026-11-15 18.57.20.jpg",
+      "images/2026-11-15 18.57.23.jpg",
+      "images/2026-11-15 18.57.26.jpg",
+      "images/2026-11-15 18.57.32.jpg",
+      "images/2026-11-15 18.57.35.jpg",
+      "images/2026-11-15 18.57.40.jpg",
+      "images/2026-11-15 18.57.42.jpg",
+      "images/2026-11-15 18.57.46.jpg",
+      "images/2026-11-15 18.57.48.jpg",
+      "images/2026-11-15 18.57.51.jpg"
+  ];
+
+  /* ---------- 瀑布流渲染 ---------- */
+  const masonry = document.getElementById('masonry');
+  IMAGES.forEach((src, i) => {
+    const a = document.createElement('div');
+    a.className = 'item';
+    a.dataset.index = i;
+    const img = new Image();
+    img.loading = 'lazy';
+    img.src = src;
+    img.alt = '图片 ' + (i + 1);
+    img.onload = () => img.classList.add('loaded');
+    a.appendChild(img);
+    a.addEventListener('click', () => openLightbox(i));
+    masonry.appendChild(a);
+  });
+
+  /* ---------- 灯箱 ---------- */
+  const lb = document.getElementById('lb');
+  const track = document.getElementById('lbTrack');
+  const countEl = document.getElementById('lbCount');
+  let current = 0;
+  const N = IMAGES.length;
+
+  // 为每张图建立 slide（含独立缩放状态）
+  const slides = IMAGES.map((src, i) => {
+    const slide = document.createElement('div');
+    slide.className = 'lb-slide';
+    const img = document.createElement('img');
+    img.src = src;
+    img.alt = '图片 ' + (i + 1);
+    slide.appendChild(img);
+    track.appendChild(slide);
+    return { slide, img, scale: 1, tx: 0, ty: 0 };
+  });
+
+  function applyTransform(s) {
+    s.img.style.transform = `translate(${s.tx}px, ${s.ty}px) scale(${s.scale})`;
+  }
+  function resetZoom(s) {
+    s.scale = 1; s.tx = 0; s.ty = 0; applyTransform(s);
+  }
+
+  let trackX = 0;
+  function layoutTrack(animate) {
+    track.style.transition = animate ? 'transform .3s ease' : 'none';
+    trackX = -current * window.innerWidth;
+    track.style.transform = `translateX(${trackX}px)`;
+  }
+  function updateCount() { countEl.textContent = (current + 1) + ' / ' + N; }
+
+  function openLightbox(i) {
+    current = i;
+    lb.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    slides.forEach(resetZoom);
+    // slide 宽度依赖视口，确保用当前宽度布局
+    slides.forEach(s => s.slide.style.flexBasis = window.innerWidth + 'px');
+    layoutTrack(false);
+    updateCount();
+  }
+  function closeLightbox() {
+    lb.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+  function go(dir) {
+    const next = current + dir;
+    if (next < 0 || next >= N) { layoutTrack(true); return; }
+    resetZoom(slides[current]);
+    current = next;
+    layoutTrack(true);
+    updateCount();
+  }
+
+  document.getElementById('lbClose').addEventListener('click', closeLightbox);
+  document.getElementById('lbPrev').addEventListener('click', () => go(-1));
+  document.getElementById('lbNext').addEventListener('click', () => go(1));
+
+  // 键盘
+  window.addEventListener('keydown', (e) => {
+    if (!lb.classList.contains('open')) return;
+    if (e.key === 'Escape') closeLightbox();
+    else if (e.key === 'ArrowLeft') go(-1);
+    else if (e.key === 'ArrowRight') go(1);
+  });
+
+  window.addEventListener('resize', () => {
+    if (!lb.classList.contains('open')) return;
+    slides.forEach(s => s.slide.style.flexBasis = window.innerWidth + 'px');
+    layoutTrack(false);
+  });
+
+  /* ---------- 触摸：滑动切换 + 双指缩放 + 拖动 ---------- */
+  let startX = 0, startY = 0, lastX = 0, dragging = false, swiping = false;
+  let pinchStartDist = 0, pinchStartScale = 1, pinching = false;
+  let panStartTx = 0, panStartTy = 0;
+
+  function dist(t1, t2) {
+    const dx = t1.clientX - t2.clientX, dy = t1.clientY - t2.clientY;
+    return Math.hypot(dx, dy);
+  }
+  function curSlide() { return slides[current]; }
+
+  track.addEventListener('touchstart', (e) => {
+    const s = curSlide();
+    if (e.touches.length === 2) {
+      pinching = true; swiping = false;
+      pinchStartDist = dist(e.touches[0], e.touches[1]);
+      pinchStartScale = s.scale;
+    } else if (e.touches.length === 1) {
+      startX = lastX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      panStartTx = s.tx; panStartTy = s.ty;
+      if (s.scale > 1) { dragging = true; swiping = false; }
+      else { swiping = true; dragging = false; }
+    }
+  }, { passive: true });
+
+  track.addEventListener('touchmove', (e) => {
+    const s = curSlide();
+    if (pinching && e.touches.length === 2) {
+      e.preventDefault();
+      const d = dist(e.touches[0], e.touches[1]);
+      s.scale = Math.min(Math.max(pinchStartScale * (d / pinchStartDist), 1), 5);
+      applyTransform(s);
+      return;
+    }
+    if (dragging && s.scale > 1 && e.touches.length === 1) {
+      e.preventDefault();
+      s.tx = panStartTx + (e.touches[0].clientX - startX);
+      s.ty = panStartTy + (e.touches[0].clientY - startY);
+      applyTransform(s);
+      return;
+    }
+    if (swiping && e.touches.length === 1) {
+      lastX = e.touches[0].clientX;
+      const dx = lastX - startX;
+      track.style.transition = 'none';
+      track.style.transform = `translateX(${trackX + dx}px)`;
+    }
+  }, { passive: false });
+
+  track.addEventListener('touchend', (e) => {
+    if (pinching && e.touches.length < 2) {
+      pinching = false;
+      const s = curSlide();
+      if (s.scale <= 1.02) resetZoom(s);
+      return;
+    }
+    if (swiping) {
+      const dx = lastX - startX;
+      const threshold = window.innerWidth * 0.18;
+      if (dx > threshold) go(-1);
+      else if (dx < -threshold) go(1);
+      else layoutTrack(true);
+    }
+    dragging = false; swiping = false;
+  });
+
+  // 双击放大/还原
+  let lastTap = 0;
+  track.addEventListener('touchend', (e) => {
+    const now = Date.now();
+    if (now - lastTap < 300 && e.changedTouches.length === 1) {
+      const s = curSlide();
+      if (s.scale > 1) resetZoom(s);
+      else { s.scale = 2.2; applyTransform(s); }
+    }
+    lastTap = now;
+  });
+
+  /* ---------- PC：滚轮缩放 + 双击放大 + 点背景关闭 ---------- */
+  track.addEventListener('wheel', (e) => {
+    if (!lb.classList.contains('open')) return;
+    e.preventDefault();
+    const s = curSlide();
+    const delta = e.deltaY < 0 ? 0.15 : -0.15;
+    s.scale = Math.min(Math.max(s.scale + delta, 1), 5);
+    if (s.scale === 1) { s.tx = 0; s.ty = 0; }
+    applyTransform(s);
+  }, { passive: false });
+
+  slides.forEach(s => {
+    s.img.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      if (s.scale > 1) resetZoom(s);
+      else { s.scale = 2.2; applyTransform(s); }
+    });
+  });
+
+  lb.addEventListener('click', (e) => {
+    if (e.target === lb || e.target.classList.contains('lb-slide')) closeLightbox();
+  });
+</script>
+</body>
+</html>
