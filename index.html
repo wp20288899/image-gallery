@@ -73,7 +73,7 @@
         break-inside: avoid;
         margin-bottom: var(--gap);
         border-radius: 10px;
-        overflow: hidden;
+        overflow: visible;
         background: #1b1e24;
         cursor: zoom-in;
         position: relative;
@@ -87,6 +87,7 @@
         width: 100%;
         height: auto;
         display: block;
+        border-radius: 10px;
         opacity: 0;
         transition: opacity 0.4s ease;
       }
@@ -97,6 +98,43 @@
         .item:hover {
           transform: translateY(-3px);
           box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+        }
+      }
+
+      /* 文字水印：倾斜渐变 + 无限循环来回缩放 */
+      .wm {
+        position: absolute;
+        right: 0px;
+        bottom: 30px;
+        z-index: 3;
+        pointer-events: none;
+        font-weight: 700;
+        font-size: 20px;
+        line-height: 1;
+        white-space: nowrap;
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        -webkit-text-fill-color: transparent;
+        transform-origin: right bottom;
+        animation: wmPulse 1.6s ease-in-out infinite;
+        filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
+      }
+      @keyframes wmPulse {
+        0% {
+          transform: rotate(-45deg) scale(0.95);
+        }
+        50% {
+          transform: rotate(-45deg) scale(1.05);
+        }
+        100% {
+          transform: rotate(-45deg) scale(0.95);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .wm {
+          animation: none;
+          transform: rotate(45deg);
         }
       }
 
@@ -125,10 +163,17 @@
         width: 100vw;
         height: 100%;
         flex: 0 0 100vw;
+        position: relative;
         display: flex;
         align-items: center;
         justify-content: center;
         overflow: hidden;
+      }
+      .lb-img-wrap {
+        position: relative;
+        display: inline-flex;
+        max-width: 100%;
+        max-height: 100%;
       }
       .lb-slide img {
         max-width: 100%;
@@ -214,6 +259,14 @@
           display: none;
         }
       }
+      /* pc端水印样式 */
+      @media (min-width: 761px) {
+        .wm {
+          right: 8px;
+          bottom: 48px;
+          font-size: 30px;
+        }
+      }
     </style>
   </head>
   <body>
@@ -254,6 +307,36 @@
         "images/17.jpg",
       ];
 
+      /* ---------- 文字水印 ---------- */
+      const WATERMARKS = {
+        "images/9.jpg": "活好",
+        "images/12.jpg": "活好",
+        "images/13.jpg": "活好",
+        "images/15.jpg": "活好",
+        "images/1.jpg": "紧致",
+        "images/2.jpg": "紧致",
+        "images/5.jpg": "紧致",
+        "images/8.jpg": "紧致",
+        "images/17.jpg": "紧致",
+        "images/4.jpg": "温柔",
+        "images/7.jpg": "温柔",
+        "images/3.jpg": "骚气",
+        "images/6.jpg": "骚气",
+        "images/10.jpg": "骚气",
+        "images/16.jpg": "骚气",
+      };
+      const randColor = () =>
+        `rgb(${(80 + Math.random() * 175) | 0}, ${(80 + Math.random() * 175) | 0}, ${(80 + Math.random() * 175) | 0})`;
+      function makeWatermark(src) {
+        const text = WATERMARKS[src];
+        if (!text) return null;
+        const span = document.createElement("span");
+        span.className = "wm";
+        span.textContent = text;
+        span.style.backgroundImage = `linear-gradient(135deg, ${randColor()}, ${randColor()})`;
+        return span;
+      }
+
       /* ---------- 瀑布流渲染 ---------- */
       const masonry = document.getElementById("masonry");
       IMAGES.forEach((src, i) => {
@@ -266,6 +349,8 @@
         img.alt = "图片 " + (i + 1);
         img.onload = () => img.classList.add("loaded");
         a.appendChild(img);
+        const wmThumb = makeWatermark(src);
+        if (wmThumb) a.appendChild(wmThumb);
         a.addEventListener("click", () => openLightbox(i));
         masonry.appendChild(a);
       });
@@ -284,7 +369,12 @@
         const img = document.createElement("img");
         img.src = src;
         img.alt = "图片 " + (i + 1);
-        slide.appendChild(img);
+        const wrap = document.createElement("div");
+        wrap.className = "lb-img-wrap";
+        wrap.appendChild(img);
+        const wmSlide = makeWatermark(src);
+        if (wmSlide) wrap.appendChild(wmSlide);
+        slide.appendChild(wrap);
         track.appendChild(slide);
         return { slide, img, scale: 1, tx: 0, ty: 0 };
       });
